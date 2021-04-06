@@ -1,14 +1,16 @@
+
+const { User, Sessions } = require('./db.js')
+
 const express = require('express')
 const cookieParser = require("cookie-parser")
-const fake_db = require("./db.js")
+
 const { v4: uuidv4 } = require('uuid');
-const matchCredentials = require('./utils.js')
+
 const app = express()
 app.set('view engine', 'ejs')
 app.use(cookieParser())
 app.use(express.urlencoded({extended: false}))
 let loggedin = false
-console.log(loggedin)
 let data = {
     status : loggedin,
     text: '<p>log out current user first</p>'
@@ -18,75 +20,75 @@ let data = {
 
 
 // show home with forms
-app.get('/', function(req, res){
-    console.log(loggedin)
+app.get('/', function( req, res){
+    
 res.render('pages/home', data)
 })
 // create a user account
-app.post('/create', function(req, res){
+app.post('/create',async function(req, res){
 let body = req.body
-let user = {
-username: body.username,
-password: body.password
-}
-fake_db.users[user.username] = user
-console.log(fake_db)
+//await User.findAll().then(user => res.json(user));
 res.redirect('/')
 })
 
 // login
-app.post('/login', function(req, res){
-
-if (matchCredentials(req.body,fake_db)) {
-let user = fake_db.users[req.body.username].username
-console.log(user)
-
-// this creates a random id that is,
-// for all practical purposes,
-// guaranteed to be unique. We’re
-// going to use it to represent the
-// logged in user, and their session
-let id = uuidv4()
-// create session record
-// Use the UUID as a key
-// for an object that holds
-// a pointer to the user
-// and their time of login.
-// If we have any data that we
-// want to hold that doesn’t belong in
-// database, can put it here as well.
-console.log(req.cookies.SID)
-//if a cookie already exists, user is still logged in and dont create a new one
+app.post('/login',async function(req, res){
+//pass parameters to database for checking
+//match credentials consumes
+console.log(req.body.username + ' ' + req.body.password)
+let id = uuidv4();
+id = String(id)
+console.log(id)
+await User.findAll(
+    {attributes:['username','password'],
+    where: { 
+       username: req.body.username, 
+       password: req.body.password
+      } }).then((notes) => {
+         console.log(notes.length)
+         if(notes.length > 0){
+            
+            
+            //if a cookie already exists, user is still logged in and dont create a new one
 if(req.cookies.SID == undefined){
-fake_db.sessions[id] = {
-user: user,
-timeOfLogin: Date.now()
-}} else if(req.cookies.SID !== undefined){
+
+// create cookie that holds the UUID (the Session ID)
+res.cookie('SID', id, {
+    expires: new Date(Date.now() + 900000),
+    httpOnly: true
+    })
+    loggedin = true
+    async function s(){
+   await Sessions.create({
+    username: req.body.username,
+    SID: id,
+    session_login : Date.now(),
+    session_logout : null
+    
+}).then(sess=>console.log(sess)).catch(err => console.log(err))};
+s();
+
+            res.render('pages/members');
+
+}else if(req.cookies.SID !== undefined){
 //logout previous user
 
     res.redirect('/logout')
 }
 
-console.log(fake_db)
-// create cookie that holds the UUID (the Session ID)
-res.cookie('SID', id, {
-expires: new Date(Date.now() + 900000),
-httpOnly: true
-})
-loggedin = true
-console.log(loggedin)
-res.render('pages/members')
-} else {
-res.redirect('/error')
-}
+         }else{
+             res.redirect('/error')
+            };
+      }).catch(err=>console.log(err));
+
+
 })
 // this is the protected route
 app.get('/supercoolmembersonlypage', function(req, res){
-let id = req.cookies.SID
 // attempt to retrieve the session.
 // if session exists, get session
 // otherwise, session === undefined.
-let session = fake_db.sessions[id]
+let session = req.cookies.SID
 // if session is undefined, then
 // this will be false, and we get sent
 // to error.ejs
@@ -97,17 +99,20 @@ if (session) {
     }
     })
 //logout link
-app.get('/logout', function(req, res){
-    //delete session
+app.get('/logout',async function(req, res){
+    //close session
+    
 
-    delete fake_db.sessions[req.cookies.SID]
+    await Sessions.findAll().then(session=>console.log(session))
+  
     //invalidate SID cookie
     res.cookie('SID', '', {
         expires: new Date(Date.now() - 9000000),
         })
         loggedin = false
-        console.log(loggedin)
-        console.log(fake_db)
+         
+        //User.findOne().then(user => res.json(user));
+              
         res.render('pages/home', data)
         })
 // if something went wrong, you get sent here
